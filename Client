@@ -1,0 +1,59 @@
+import socket
+import threading
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+HOST = '192.168.1.74'   # replace with the server's actual local IP address
+PORT = 5555
+
+client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+client.connect((HOST, PORT))
+
+def timestamp():
+    return datetime.now(ZoneInfo("Asia/Riyadh")).strftime("%H:%M:%S")
+
+# --- Handshake happens first, synchronously, no threads yet ---
+msg = client.recv(1024).decode('utf-8')
+if msg == "USERNAME":
+    username = input("Enter your username: ")
+    client.send(username.encode('utf-8'))
+
+msg = client.recv(1024).decode('utf-8')
+if msg == "PASSWORD":
+    password = input("Enter the group password: ")
+    client.send(password.encode('utf-8'))
+
+msg = client.recv(1024).decode('utf-8')
+if msg == "WRONG_PASSWORD":
+    print("Incorrect password. Disconnecting.")
+    client.close()
+    exit()
+else:
+    print(msg)
+
+def receive():
+    while True:
+        try:
+            message = client.recv(1024).decode('utf-8')
+            print(message)
+        except:
+            print("An error occurred, connection lost.")
+            client.close()
+            break
+
+def write():
+    while True:
+        text = input('')
+        message = f"[{timestamp()}] {username} : {text}"
+        print(message)
+        try:
+            client.send(message.encode('utf-8'))
+        except:
+            break
+
+receive_thread = threading.Thread(target=receive)
+receive_thread.start()
+
+write_thread = threading.Thread(target=write)
+write_thread.start()
+
