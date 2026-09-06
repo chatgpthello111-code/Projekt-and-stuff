@@ -1,2 +1,3 @@
 # Projekt-and-stuff
-Projects I want to work on 
+
+Just projects i want to work on 
