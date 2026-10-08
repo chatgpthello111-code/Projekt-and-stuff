@@ -1,0 +1,371 @@
+
+# ---------- Shared styling ----------
+BG = "#2b2b2b"
+FG = "#f0f0f0"
+ACCENT = "#4a90d9"
+FONT = ("Helvetica", 12)
+TITLE_FONT = ("Helvetica", 20, "bold")
+MONO_FONT = ("Courier New", 10)
+
+# ---------- Morse code data ----------
+morse_code = {
+    'A': '.-', 'B': '-...', 'C': '-.-.', 'D': '-..', 'E': '.',
+    'F': '..-.', 'G': '--.', 'H': '....', 'I': '..', 'J': '.---',
+    'K': '-.-', 'L': '.-..', 'M': '--', 'N': '-.', 'O': '---',
+    'P': '.--.', 'Q': '--.-', 'R': '.-.', 'S': '...', 'T': '-',
+    'U': '..-', 'V': '...-', 'W': '.--', 'X': '-..-', 'Y': '-.--',
+    'Z': '--..', '0': '-----', '1': '.----', '2': '..---',
+    '3': '...--', '4': '....-', '5': '.....', '6': '-....',
+    '7': '--...', '8': '---..', '9': '----.'
+}
+morse_to_text_dict = {value: key for key, value in morse_code.items()}
+
+
+def text_to_morse(text):
+    result = []
+    for char in text.upper():
+        if char == ' ':
+            result.append('/')
+        elif char in morse_code:
+            result.append(morse_code[char])
+    return ' '.join(result)
+
+
+def morse_to_text(morse):
+    words = morse.split(' / ')
+    decoded_words = []
+    for word in words:
+        letters = word.split()
+        decoded_words.append(''.join(morse_to_text_dict.get(l, '') for l in letters))
+    return ' '.join(decoded_words)
+
+
+def timestamp():
+    return datetime.now(ZoneInfo("Asia/Riyadh")).strftime("%H:%M:%S")
+
+
+# ---------- Main application ----------
+class GladOSApp(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("GLaD OS")
+        self.geometry("650x480")
+        self.configure(bg=BG)
+
+        # Shared chat state
+        self.chat_socket = None
+        self.chat_username = None
+        self.chat_queue = queue.Queue()
+        self.chat_stop_flag = threading.Event()
+
+        container = tk.Frame(self, bg=BG)
+        container.pack(fill="both", expand=True)
+        container.grid_rowconfigure(0, weight=1)
+        container.grid_columnconfigure(0, weight=1)
+
+        self.frames = {}
+        for F in (MainMenu, CalculatorFrame, MorseFrame, ChatFrame):
+            frame = F(container, self)
+            self.frames[F] = frame
+            frame.grid(row=0, column=0, sticky="nsew")
+
+        self.show_frame(MainMenu)
+
+    def show_frame(self, frame_class):
+        frame = self.frames[frame_class]
+        frame.tkraise()
+        if hasattr(frame, "on_show"):
+            frame.on_show()
+
+
+# ---------- Main menu ----------
+class MainMenu(tk.Frame):
+    def __init__(self, parent, app):
+        super().__init__(parent, bg=BG)
+        self.app = app
+
+        tk.Label(self, text="GLaD OS", font=TITLE_FONT, bg=BG, fg=FG).pack(pady=(50, 30))
+
+        tk.Button(self, text="Calculator", font=FONT, width=20,
+                  command=lambda: app.show_frame(CalculatorFrame)).pack(pady=8)
+        tk.Button(self, text="Morse Code Translator", font=FONT, width=20,
+                  command=lambda: app.show_frame(MorseFrame)).pack(pady=8)
+        tk.Button(self, text="Join Chat", font=FONT, width=20,
+                  command=lambda: app.show_frame(ChatFrame)).pack(pady=8)
+        tk.Button(self, text="Exit", font=FONT, width=20,
+                  command=app.destroy).pack(pady=8)
+
+
+# ---------- Calculator ----------
+class CalculatorFrame(tk.Frame):
+    def __init__(self, parent, app):
+        super().__init__(parent, bg=BG)
+        self.app = app
+
+        tk.Label(self, text="Calculator", font=TITLE_FONT, bg=BG, fg=FG).pack(pady=(30, 20))
+
+        entry_frame = tk.Frame(self, bg=BG)
+        entry_frame.pack(pady=5)
+
+        tk.Label(entry_frame, text="Number 1:", font=FONT, bg=BG, fg=FG).grid(row=0, column=0, padx=5, pady=5)
+        self.num1_entry = tk.Entry(entry_frame, font=FONT, width=12)
+        self.num1_entry.grid(row=0, column=1, padx=5, pady=5)
+
+        tk.Label(entry_frame, text="Number 2:", font=FONT, bg=BG, fg=FG).grid(row=1, column=0, padx=5, pady=5)
+        self.num2_entry = tk.Entry(entry_frame, font=FONT, width=12)
+        self.num2_entry.grid(row=1, column=1, padx=5, pady=5)
+
+        op_frame = tk.Frame(self, bg=BG)
+        op_frame.pack(pady=15)
+
+        tk.Button(op_frame, text="+", font=FONT, width=5,
+                  command=lambda: self.calculate("+")).grid(row=0, column=0, padx=5)
+        tk.Button(op_frame, text="-", font=FONT, width=5,
+                  command=lambda: self.calculate("-")).grid(row=0, column=1, padx=5)
+        tk.Button(op_frame, text="×", font=FONT, width=5,
+                  command=lambda: self.calculate("*")).grid(row=0, column=2, padx=5)
+        tk.Button(op_frame, text="÷", font=FONT, width=5,
+                  command=lambda: self.calculate("/")).grid(row=0, column=3, padx=5)
+
+        self.result_label = tk.Label(self, text="Result: ", font=FONT, bg=BG, fg=ACCENT)
+        self.result_label.pack(pady=15)
+
+        tk.Button(self, text="Back", font=FONT, width=15,
+                  command=lambda: app.show_frame(MainMenu)).pack(pady=20)
+
+    def calculate(self, op):
+        try:
+            num1 = float(self.num1_entry.get())
+            num2 = float(self.num2_entry.get())
+        except ValueError:
+            self.result_label.config(text="Result: please enter valid numbers")
+            return
+
+        if op == "+":
+            result = num1 + num2
+        elif op == "-":
+            result = num1 - num2
+        elif op == "*":
+            result = num1 * num2
+        elif op == "/":
+            if num2 == 0:
+                self.result_label.config(text="Result: cannot divide by zero")
+                return
+            result = num1 / num2
+        else:
+            return
+
+        self.result_label.config(text=f"Result: {result}")
+
+
+# ---------- Morse translator ----------
+class MorseFrame(tk.Frame):
+    def __init__(self, parent, app):
+        super().__init__(parent, bg=BG)
+        self.app = app
+
+        tk.Label(self, text="Morse Code Translator", font=TITLE_FONT, bg=BG, fg=FG).pack(pady=(30, 20))
+
+        self.input_entry = tk.Entry(self, font=FONT, width=45)
+        self.input_entry.pack(pady=10)
+
+        btn_frame = tk.Frame(self, bg=BG)
+        btn_frame.pack(pady=5)
+
+        tk.Button(btn_frame, text="Text to Morse", font=FONT,
+                  command=self.do_translate).grid(row=0, column=0, padx=10)
+        tk.Button(btn_frame, text="Morse to Text", font=FONT,
+                  command=self.do_convert).grid(row=0, column=1, padx=10)
+
+        self.output_text = tk.Text(self, font=MONO_FONT, width=55, height=4,
+                                    bg="#1e1e1e", fg=FG, wrap="word")
+        self.output_text.pack(pady=15)
+
+        tk.Button(self, text="Back", font=FONT, width=15,
+                  command=lambda: app.show_frame(MainMenu)).pack(pady=10)
+
+    def do_translate(self):
+        text = self.input_entry.get()
+        result = text_to_morse(text)
+        self.output_text.delete("1.0", tk.END)
+        self.output_text.insert(tk.END, result)
+
+    def do_convert(self):
+        morse = self.input_entry.get()
+        result = morse_to_text(morse)
+        self.output_text.delete("1.0", tk.END)
+        self.output_text.insert(tk.END, result)
+
+
+# ---------- Chat ----------
+class ChatFrame(tk.Frame):
+    def __init__(self, parent, app):
+        super().__init__(parent, bg=BG)
+        self.app = app
+
+        tk.Label(self, text="Chatroom", font=TITLE_FONT, bg=BG, fg=FG).pack(pady=(20, 10))
+
+        # --- Connect panel ---
+        self.connect_panel = tk.Frame(self, bg=BG)
+        self.connect_panel.pack(pady=10)
+
+        tk.Label(self.connect_panel, text="Server IP:", font=FONT, bg=BG, fg=FG).grid(row=0, column=0, padx=5, pady=5, sticky="e")
+        self.ip_entry = tk.Entry(self.connect_panel, font=FONT, width=20)
+        self.ip_entry.insert(0, "127.0.0.1")
+        self.ip_entry.grid(row=0, column=1, padx=5, pady=5)
+
+        tk.Label(self.connect_panel, text="Username:", font=FONT, bg=BG, fg=FG).grid(row=1, column=0, padx=5, pady=5, sticky="e")
+        self.username_entry = tk.Entry(self.connect_panel, font=FONT, width=20)
+        self.username_entry.grid(row=1, column=1, padx=5, pady=5)
+
+        tk.Label(self.connect_panel, text="Password:", font=FONT, bg=BG, fg=FG).grid(row=2, column=0, padx=5, pady=5, sticky="e")
+        self.password_entry = tk.Entry(self.connect_panel, font=FONT, width=20, show="*")
+        self.password_entry.grid(row=2, column=1, padx=5, pady=5)
+
+        self.connect_button = tk.Button(self.connect_panel, text="Connect", font=FONT,
+                                         command=self.connect_to_server)
+        self.connect_button.grid(row=3, column=0, columnspan=2, pady=10)
+
+        # --- Chat panel (hidden until connected) ---
+        self.chat_panel = tk.Frame(self, bg=BG)
+
+        self.chat_log = scrolledtext.ScrolledText(self.chat_panel, font=MONO_FONT, width=65, height=16,
+                                                    bg="#1e1e1e", fg=FG, state="disabled", wrap="word")
+        self.chat_log.pack(pady=5)
+
+        send_frame = tk.Frame(self.chat_panel, bg=BG)
+        send_frame.pack(pady=5, fill="x")
+
+        self.message_entry = tk.Entry(send_frame, font=FONT, width=45)
+        self.message_entry.pack(side="left", padx=5)
+        self.message_entry.bind("<Return>", lambda event: self.send_message())
+
+        tk.Button(send_frame, text="Send", font=FONT, command=self.send_message).pack(side="left", padx=5)
+        tk.Button(send_frame, text="Leave", font=FONT, command=self.leave_chat).pack(side="left", padx=5)
+
+        tk.Button(self, text="Back", font=FONT, width=15,
+                  command=self.go_back).pack(pady=10)
+
+    def on_show(self):
+        # Show the right panel depending on connection state
+        if self.app.chat_socket:
+            self.connect_panel.pack_forget()
+            self.chat_panel.pack()
+        else:
+            self.chat_panel.pack_forget()
+            self.connect_panel.pack()
+
+    def go_back(self):
+        self.app.show_frame(MainMenu)
+
+    def log(self, text):
+        self.chat_log.config(state="normal")
+        self.chat_log.insert(tk.END, text + "\n")
+        self.chat_log.see(tk.END)
+        self.chat_log.config(state="disabled")
+
+    def connect_to_server(self):
+        host = self.ip_entry.get().strip() or "127.0.0.1"
+        username = self.username_entry.get().strip()
+        password = self.password_entry.get().strip()
+
+        if not username:
+            messagebox.showerror("GLaD OS", "Please enter a username.")
+            return
+
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(5)
+        try:
+            sock.connect((host, 5555))
+        except Exception as e:
+            messagebox.showerror("GLaD OS", f"Could not connect: {e}")
+            return
+
+        try:
+            msg = sock.recv(1024).decode('utf-8')
+            if msg == "USERNAME":
+                sock.send(username.encode('utf-8'))
+
+            msg = sock.recv(1024).decode('utf-8')
+            if msg == "PASSWORD":
+                sock.send(password.encode('utf-8'))
+
+            msg = sock.recv(1024).decode('utf-8')
+            if msg == "WRONG_PASSWORD":
+                messagebox.showerror("GLaD OS", "Incorrect password.")
+                sock.close()
+                return
+        except Exception as e:
+            messagebox.showerror("GLaD OS", f"Connection error: {e}")
+            sock.close()
+            return
+
+        sock.settimeout(None)
+        self.app.chat_socket = sock
+        self.app.chat_username = username
+        self.app.chat_stop_flag.clear()
+
+        self.chat_log.config(state="normal")
+        self.chat_log.delete("1.0", tk.END)
+        self.chat_log.config(state="disabled")
+        self.log("Connected to the group chat!")
+
+        threading.Thread(target=self.receive_loop, daemon=True).start()
+        self.after(100, self.poll_queue)
+
+        self.connect_panel.pack_forget()
+        self.chat_panel.pack()
+
+    def receive_loop(self):
+        sock = self.app.chat_socket
+        while not self.app.chat_stop_flag.is_set():
+            try:
+                message = sock.recv(1024).decode('utf-8')
+                if not message:
+                    break
+                self.app.chat_queue.put(message)
+            except:
+                break
+
+    def poll_queue(self):
+        try:
+            while True:
+                message = self.app.chat_queue.get_nowait()
+                self.log(message)
+        except queue.Empty:
+            pass
+
+        if self.app.chat_socket and not self.app.chat_stop_flag.is_set():
+            self.after(100, self.poll_queue)
+
+    def send_message(self):
+        text = self.message_entry.get().strip()
+        if not text or not self.app.chat_socket:
+            return
+
+        message = f"[{timestamp()}] {self.app.chat_username} : {text}"
+        self.log(message)
+        try:
+            self.app.chat_socket.send(message.encode('utf-8'))
+        except Exception:
+            self.log("Message failed to send. Connection may be lost.")
+        self.message_entry.delete(0, tk.END)
+
+    def leave_chat(self):
+        self.app.chat_stop_flag.set()
+        if self.app.chat_socket:
+            try:
+                self.app.chat_socket.close()
+            except:
+                pass
+        self.app.chat_socket = None
+        self.app.chat_username = None
+
+        self.chat_panel.pack_forget()
+        self.connect_panel.pack()
+        self.app.show_frame(MainMenu)
+
+
+if __name__ == "__main__":
+    app = GladOSApp()
+    app.mainloop()
